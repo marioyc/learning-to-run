@@ -378,8 +378,11 @@ class Trainer(object):
         for step in xrange(1 + self.num_steps):
             self.do_before_step(step)
 
+            #print("-" * 20)
+            #print("Step: %d" % step)
             (loss, summary,
              total_rewards, episode_rewards) = self.controller.train(self.sess)
+            #print("-" * 20)
             losses.append(loss)
             rewards.append(total_rewards)
             all_ep_rewards.extend(episode_rewards)

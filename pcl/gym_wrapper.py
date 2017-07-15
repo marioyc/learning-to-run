@@ -29,7 +29,6 @@ from osim.env import RunEnv
 
 def get_env(env_str):
     if env_str == 'osim-rl':
-        print("Creando env")
         return RunEnv(visualize=False)
     else:
         return gym.make(env_str)

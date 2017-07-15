@@ -287,6 +287,7 @@ class Controller(object):
         sess.run(self.model.copy_op)
 
         # sample from env
+        #print("Sample from env")
         (initial_state,
          observations, actions, rewards,
          terminated, pads) = self.sample_episodes(sess)
@@ -299,6 +300,7 @@ class Controller(object):
         loss, summary = 0, None
         # train on online batch
         if self.use_online_batch:
+            #print("Train on online batch")
             loss, summary = self._train(
                 sess,
                 observations, initial_state, actions,
@@ -306,6 +308,7 @@ class Controller(object):
 
         # update relative entropy coefficient
         if self.update_eps_lambda:
+            #print("update relative entropy coefficient")
             episode_rewards = np.array(self.episode_rewards)
             episode_lengths = np.array(self.episode_lengths)
             eps_lambda = find_best_eps_lambda(episode_rewards, episode_lengths)
@@ -316,6 +319,7 @@ class Controller(object):
         replay_batch, replay_probs = self.get_from_replay_buffer(
             self.replay_batch_size)
         if replay_batch:
+            #print("Train on replay batch")
             (initial_state,
              observations, actions, rewards,
              terminated, pads) = replay_batch
