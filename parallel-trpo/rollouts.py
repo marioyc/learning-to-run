@@ -54,7 +54,8 @@ class Actor(multiprocessing.Process):
         self.action_dist_logstd = tf.tile(action_dist_logstd_param, tf.stack((tf.shape(self.action_dist_mu)[0], 1)))
 
         config = tf.ConfigProto(
-            device_count = {'GPU': 0}
+            device_count={'GPU': 0},
+            #gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.1),
         )
         self.session = tf.Session(config=config)
         self.session.run(tf.global_variables_initializer())
@@ -130,6 +131,7 @@ class ParallelRollout():
 
         # keep 20,000 timesteps per update
         num_rollouts = self.args.timesteps_per_batch / self.average_timesteps_in_episode
+        print("Number of rollouts: %d" % num_rollouts)
 
         for i in xrange(num_rollouts):
             self.tasks.put(1)
