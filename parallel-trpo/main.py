@@ -9,14 +9,19 @@ import json
 
 from osim.env import RunEnv
 
-parser = argparse.ArgumentParser(description='TRPO.')
+parser = argparse.ArgumentParser(description='PPO.')
 # these parameters should stay the same
-parser.add_argument("--task", type=str, default='Reacher-v1')
-parser.add_argument("--timesteps_per_batch", type=int, default=10000)
-parser.add_argument("--n_steps", type=int, default=6000000)
+parser.add_argument("--task", type=str, default='osim-rl')
+parser.add_argument("--timesteps_per_batch", type=int, default=5000)
+parser.add_argument("--n_steps", type=int, default=1000000)
 parser.add_argument("--gamma", type=float, default=.99)
-parser.add_argument("--num_threads", type=int, default=5)
+parser.add_argument("--num_threads", type=int, default=8)
 parser.add_argument("--monitor", type=bool, default=False)
+parser.add_argument("--lr", type=float, default=3e-4)
+parser.add_argument("--epochs", type=int, default=10)
+parser.add_argument("--batch_size", type=int, default=64)
+parser.add_argument("--epsilon", type=float, default=0.2)
+parser.add_argument("--log_name", type=str, default='ppo')
 
 args = parser.parse_args()
 
@@ -42,24 +47,18 @@ learner_tasks.join()
 starting_weights = learner_results.get()
 rollouts.set_policy_weights(starting_weights)
 
-start_time = time.time()
 history = {}
 history["rollout_time"] = []
 history["learn_time"] = []
 history["mean_reward"] = []
 history["timesteps"] = []
 
-# start it off with a big negative number
-last_reward = -1000000
-recent_total_reward = 0
-
-totalsteps = 0;
-
-starting_timesteps = args.timesteps_per_batch
-
+start_time = time.time()
+totalsteps = 0
 iteration = 0
 while True:
-    iteration += 1;
+    iteration += 1
+    print "-------- Iteration %d ----------" % iteration
 
     # runs a bunch of async processes that collect rollouts
     rollout_start = time.time()
@@ -76,7 +75,6 @@ while True:
     learner_tasks.join()
     new_policy_weights, mean_reward = learner_results.get()
     learn_time = (time.time() - learn_start) / 60.0
-    print "-------- Iteration %d ----------" % iteration
     print "Total time: %.2f mins" % ((time.time() - start_time) / 60.0)
 
     history["rollout_time"].append(rollout_time)

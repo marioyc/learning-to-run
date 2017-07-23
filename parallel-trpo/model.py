@@ -45,6 +45,7 @@ class PPO(multiprocessing.Process):
             h2 = tf.nn.relu(h2)
             h3 = fully_connected(h2, self.hidden_size, self.action_size, weight_init, bias_init, "policy_h3")
             action_dist_logstd_param = tf.Variable((.01*np.random.randn(1, self.action_size)).astype(np.float32), name="policy_logstd")
+
         # means for each action
         self.action_dist_mu = h3
         # log standard deviations for each actions
@@ -59,7 +60,7 @@ class PPO(multiprocessing.Process):
         ratio = tf.exp(log_p_n - log_oldp_n)
 
         surr1 = ratio * self.advantage
-        surr2 = tf.clip_by_value(ratio, 1.0 - 0.2, 1.0 + 0.2) * self.advantage
+        surr2 = tf.clip_by_value(ratio, 1.0 - self.args.epsilon, 1.0 + self.args.epsilon) * self.advantage
         pol_surr = -tf.reduce_mean(tf.minimum(surr1, surr2))
         var_list = tf.trainable_variables()
 
@@ -71,19 +72,19 @@ class PPO(multiprocessing.Process):
         self.losses = [pol_surr, kl, ent]
 
         self.global_step = tf.Variable(initial_value=0, trainable=False)
-        learning_rate = tf.train.exponential_decay(1e-3, self.global_step, 1, 0.9999)
+        learning_rate = tf.train.exponential_decay(self.args.lr, self.global_step, 1, 0.9999)
         self.optimizer = tf.train.AdamOptimizer(learning_rate)
         self.train_op = self.optimizer.minimize(pol_surr)
 
-        self.session.run(tf.global_variables_initializer())
         # value function
-        # self.vf = VF(self.session)
-        self.vf = LinearVF()
+        self.vf = ValueFunction(self.args, self.observation_size, self.session)
+
+        self.session.run(tf.global_variables_initializer())
 
         self.get_policy = GetPolicyWeights(self.session, var_list)
 
         # Logs
-        self.writer = tf.summary.FileWriter('logs/ppo', self.session.graph)
+        self.writer = tf.summary.FileWriter('logs/' + self.args.log_name, self.session.graph)
         self.mean_loss = tf.placeholder(tf.float32, shape=())
         self.summary_loss = tf.summary.scalar('mean_loss', self.mean_loss)
         self.log_step_loss = 0
@@ -135,13 +136,13 @@ class PPO(multiprocessing.Process):
         indexes = np.arange(len(obs_n))
         self.session.run(tf.assign(self.global_step, 0))
         updates = 0
-        for i in range(15):
+        for i in range(self.args.epochs):
             mean_loss = 0.0
             start = 0
             n_minibatches = 0
             np.random.shuffle(indexes)
-            while start + 64 < len(obs_n):
-                end = min(len(obs_n), start + 64)
+            while start + self.args.batch_size < len(obs_n):
+                end = min(len(obs_n), start + self.args.batch_size)
                 minibatch_indexes = indexes[start:end]
                 feed_dict = {
                     self.obs: obs_n[minibatch_indexes],
