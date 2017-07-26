@@ -197,7 +197,8 @@ class PPO(multiprocessing.Process):
         self.log_step_reward += 1
 
         stats = {}
-        stats["Average sum of rewards per episode"] = mean_reward
+        stats["Average sum of rewards"] = mean_reward
+        stats["Std of sum of rewards"] = np.std(episoderewards)
         stats["Entropy"] = entropy_after
         stats["Timesteps"] = sum([len(path["rewards"]) for path in paths])
         stats["KL between old and new distribution"] = kl_after
