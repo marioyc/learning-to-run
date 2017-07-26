@@ -12,22 +12,27 @@ class ValueFunction(object):
         self.y = tf.placeholder(tf.float32, shape=[None], name="y")
 
         weight_init = tf.random_uniform_initializer(-0.05, 0.05)
+        weight_regularizer = tf.contrib.layers.l2_regularizer(self.args.l2_reg)
         bias_init = tf.constant_initializer(0)
 
         with tf.variable_scope("VF"):
-            h1 = fully_connected(self.x, observation_size, hidden_size, weight_init, bias_init, "h1")
+            h1 = fully_connected(self.x, observation_size, hidden_size,
+                                 weight_init, weight_regularizer, bias_init, "h1")
             h1 = tf.nn.relu(h1)
-            h2 = fully_connected(h1, hidden_size, hidden_size, weight_init, bias_init, "h2")
+            h2 = fully_connected(h1, hidden_size, hidden_size, weight_init,
+                                 weight_regularizer, bias_init, "h2")
             h2 = tf.nn.relu(h2)
-            h3 = fully_connected(h2, hidden_size, 1, weight_init, bias_init, "h3")
+            h3 = fully_connected(h2, hidden_size, 1, weight_init,
+                                 weight_regularizer, bias_init, "h3")
         self.vf = tf.reshape(h3, (-1,))
 
         vf_loss = tf.nn.l2_loss(self.vf - self.y)
+        reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES, scope="VF")
 
         self.global_step = tf.Variable(initial_value=0, trainable=False)
         learning_rate = tf.train.exponential_decay(self.args.lr, self.global_step, 1, 0.9999)
         self.optimizer = tf.train.AdamOptimizer(learning_rate)
-        self.train_op = self.optimizer.minimize(vf_loss)
+        self.train_op = self.optimizer.minimize(vf_loss + sum(reg_losses))
 
     def fit(self, paths):
         featmat = np.concatenate([path["obs"] for path in paths])

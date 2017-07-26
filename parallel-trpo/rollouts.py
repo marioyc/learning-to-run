@@ -38,17 +38,22 @@ class Actor(multiprocessing.Process):
         self.observation_size = self.env.observation_space.shape[0]
         self.action_size = np.prod(self.env.action_space.shape)
         self.hidden_size = 64
+
         weight_init = tf.random_uniform_initializer(-0.05, 0.05)
+        weight_regularizer = tf.contrib.layers.l2_regularizer(self.args.l2_reg)
         bias_init = tf.constant_initializer(0)
+
         # tensorflow model of the policy
         self.obs = tf.placeholder(tf.float32, [None, self.observation_size])
-        self.debug = tf.constant([2,2])
         with tf.variable_scope("policy-a"):
-            h1 = fully_connected(self.obs, self.observation_size, self.hidden_size, weight_init, bias_init, "policy_h1")
+            h1 = fully_connected(self.obs, self.observation_size, self.hidden_size,
+                                 weight_init, weight_regularizer, bias_init, "policy_h1")
             h1 = tf.nn.relu(h1)
-            h2 = fully_connected(h1, self.hidden_size, self.hidden_size, weight_init, bias_init, "policy_h2")
+            h2 = fully_connected(h1, self.hidden_size, self.hidden_size,
+                                 weight_init, weight_regularizer, bias_init, "policy_h2")
             h2 = tf.nn.relu(h2)
-            h3 = fully_connected(h2, self.hidden_size, self.action_size, weight_init, bias_init, "policy_h3")
+            h3 = fully_connected(h2, self.hidden_size, self.action_size, weight_init,
+                                 weight_regularizer, bias_init, "policy_h3")
             action_dist_logstd_param = tf.Variable((.01*np.random.randn(1, self.action_size)).astype(np.float32), name="policy_logstd")
         self.action_dist_mu = h3
         self.action_dist_logstd = tf.tile(action_dist_logstd_param, tf.stack((tf.shape(self.action_dist_mu)[0], 1)))
@@ -88,7 +93,7 @@ class Actor(multiprocessing.Process):
 
     def rollout(self):
         obs, actions, rewards, action_dists_mu, action_dists_logstd = [], [], [], [], []
-        ob = filter(self.env.reset())
+        ob = self.env.reset()
         for i in xrange(self.args.max_pathlength - 1):
             obs.append(ob)
             action, action_dist_mu, action_dist_logstd = self.act(ob)
@@ -96,14 +101,16 @@ class Actor(multiprocessing.Process):
             action_dists_mu.append(action_dist_mu)
             action_dists_logstd.append(action_dist_logstd)
             res = self.env.step(action)
-            ob = filter(res[0])
+            ob = res[0]
             rewards.append((res[1]))
             if res[2] or i == self.args.max_pathlength - 2:
-                path = {"obs": np.concatenate(np.expand_dims(obs, 0)),
-                             "action_dists_mu": np.concatenate(action_dists_mu),
-                             "action_dists_logstd": np.concatenate(action_dists_logstd),
-                             "rewards": np.array(rewards),
-                             "actions":  np.array(actions)}
+                path = {
+                    "obs": np.concatenate(np.expand_dims(obs, 0)),
+                    "action_dists_mu": np.concatenate(action_dists_mu),
+                    "action_dists_logstd": np.concatenate(action_dists_logstd),
+                    "rewards": np.array(rewards),
+                    "actions":  np.array(actions)
+                }
                 return path
                 break
 

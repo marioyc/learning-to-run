@@ -63,9 +63,11 @@ def xavier_initializer(self, shape):
     bound = np.sqrt(6.0 / dim_sum)
     return tf.random_uniform(shape, minval=-bound, maxval=bound)
 
-def fully_connected(input_layer, input_size, output_size, weight_init, bias_init, scope):
+def fully_connected(input_layer, input_size, output_size,
+                    weight_init, weight_regularizer, bias_init, scope):
     with tf.variable_scope(scope):
-        w = tf.get_variable("w", [input_size, output_size], initializer=weight_init)
-        # w = tf.Variable(xavier_initializer([input_size, output_size]), name="w")
+        w = tf.get_variable("w", [input_size, output_size],
+                            initializer=weight_init,
+                            regularizer=weight_regularizer)
         b = tf.get_variable("b", [output_size], initializer=bias_init)
     return tf.matmul(input_layer,w) + b

@@ -22,6 +22,8 @@ parser.add_argument("--epochs", type=int, default=10)
 parser.add_argument("--batch_size", type=int, default=64)
 parser.add_argument("--epsilon", type=float, default=0.2)
 parser.add_argument("--log_name", type=str, default='ppo')
+parser.add_argument("--l2_reg", type=float, default=0.0)
+parser.add_argument("--save_steps", type=int, default=100)
 
 args = parser.parse_args()
 
@@ -84,9 +86,10 @@ while True:
 
     print "Current steps is " + str(args.timesteps_per_batch)
 
-    if iteration % 100 == 0:
+    if iteration % args.save_steps == 0:
         with open("%s" % args.task, "w") as outfile:
             json.dump(history, outfile)
+        learner_tasks.put(2)
 
     totalsteps += args.timesteps_per_batch
     print "%d total steps have happened\n" % totalsteps
@@ -96,3 +99,5 @@ while True:
     rollouts.set_policy_weights(new_policy_weights)
 
 rollouts.end()
+learner_tasks.put(2)
+learner_tasks.put(None)
