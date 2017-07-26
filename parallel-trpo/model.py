@@ -206,4 +206,4 @@ class PPO(multiprocessing.Process):
         for k, v in stats.iteritems():
             print(k + ": " + " " * (40 - len(k)) + str(v))
 
-        return stats["Average sum of rewards per episode"]
+        return mean_reward
