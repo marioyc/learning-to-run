@@ -28,7 +28,7 @@ parser.add_argument("--save_steps", type=int, default=100)
 args = parser.parse_args()
 
 if args.task == 'osim-rl':
-    args.max_pathlength = 500
+    args.max_pathlength = 1000
 else:
     args.max_pathlength = gym.spec(args.task).timestep_limit
 
