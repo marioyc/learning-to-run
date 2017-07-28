@@ -133,6 +133,8 @@ class PPO(multiprocessing.Process):
             path["baseline"] = self.vf.predict(path)
             path["returns"] = discount(path["rewards"], self.args.gamma)
             path["advantage"] = path["returns"] - path["baseline"]
+            path["gae"] = calc_gae(path["rewards"], path["baseline"],
+                                   self.args.gamma, self.args.lamb)
             # path["advantage"] = path["returns"]
 
         # puts all the experiences in a matrix: total_timesteps x options
@@ -142,9 +144,8 @@ class PPO(multiprocessing.Process):
         action_n = np.concatenate([path["actions"] for path in paths])
 
         # standardize to mean 0 stddev 1
-        advant_n = np.concatenate([path["advantage"] for path in paths])
-        advant_n -= advant_n.mean()
-        advant_n /= (advant_n.std() + 1e-8)
+        advant_n = np.concatenate([path["gae"] for path in paths])
+        advant_n = (advant_n - advant_n.mean()) / advant_n.std()
 
         # train value function / baseline on rollout paths
         self.vf.fit(paths)

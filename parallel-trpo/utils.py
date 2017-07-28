@@ -32,6 +32,15 @@ def discount(x, gamma):
     assert x.ndim >= 1
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
 
+def calc_gae(rewards, value, gamma, lamb):
+    T = len(rewards)
+    gae = np.empty(T)
+    gae[T - 1] = rewards[T - 1]
+    for t in reversed(range(T - 1)):
+        delta = rewards[t] + gamma * value[t + 1] - value[t]
+        gae[t] = delta + gamma * lamb * gae[t + 1]
+    return gae
+
 class GetPolicyWeights(object):
     def __init__(self, session, var_list):
         self.session = session
