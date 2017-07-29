@@ -158,8 +158,8 @@ class PPO(multiprocessing.Process):
             start = 0
             n_minibatches = 0
             np.random.shuffle(indexes)
-            while start + self.args.batch_size < len(obs_n):
-                end = min(len(obs_n), start + self.args.batch_size)
+            while start + self.args.batch_size <= len(obs_n):
+                end = start + self.args.batch_size
                 minibatch_indexes = indexes[start:end]
 
                 feed_dict = {
