@@ -17,13 +17,13 @@ class Actor(multiprocessing.Process):
         self.args = args
         self.monitor = monitor
 
-
     def act(self, obs):
         obs = np.expand_dims(obs, 0)
-        action_dist_mu, action_dist_logstd = self.session.run([self.action_dist_mu, self.action_dist_logstd], feed_dict={self.obs: obs})
+        mean, logstd = self.session.run([self.action_mean, self.action_logstd],
+                                        feed_dict={self.obs: obs})
         # samples the guassian distribution
-        act = action_dist_mu + np.exp(action_dist_logstd)*np.random.randn(*action_dist_logstd.shape)
-        return act.ravel(), action_dist_mu, action_dist_logstd
+        act = mean + np.exp(logstd) * np.random.randn(*logstd.shape)
+        return act.ravel(), mean, logstd
 
     def run(self):
         if self.args.task == 'osim-rl':
@@ -34,35 +34,23 @@ class Actor(multiprocessing.Process):
         if self.monitor:
             self.env.monitor.start('monitor/', force=True)
 
-        # tensorflow variables (same as in model.py)
-        self.observation_size = self.env.observation_space.shape[0]
-        self.action_size = np.prod(self.env.action_space.shape)
-        self.hidden_size = 64
-
-        weight_init = tf.random_uniform_initializer(-0.05, 0.05)
-        weight_regularizer = tf.contrib.layers.l2_regularizer(self.args.l2_reg)
-        bias_init = tf.constant_initializer(0)
-
-        # tensorflow model of the policy
-        self.obs = tf.placeholder(tf.float32, [None, self.observation_size])
-        with tf.variable_scope("policy-a"):
-            h1 = fully_connected(self.obs, self.observation_size, self.hidden_size,
-                                 weight_init, weight_regularizer, bias_init, "policy_h1")
-            h1 = tf.nn.relu(h1)
-            h2 = fully_connected(h1, self.hidden_size, self.hidden_size,
-                                 weight_init, weight_regularizer, bias_init, "policy_h2")
-            h2 = tf.nn.relu(h2)
-            h3 = fully_connected(h2, self.hidden_size, self.action_size, weight_init,
-                                 weight_regularizer, bias_init, "policy_h3")
-            action_dist_logstd_param = tf.Variable((.01*np.random.randn(1, self.action_size)).astype(np.float32), name="policy_logstd")
-        self.action_dist_mu = h3
-        self.action_dist_logstd = tf.tile(action_dist_logstd_param, tf.stack((tf.shape(self.action_dist_mu)[0], 1)))
-
         config = tf.ConfigProto(
             device_count={'GPU': 0},
             #gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.1),
         )
         self.session = tf.Session(config=config)
+
+        self.observation_size = self.env.observation_space.shape[0]
+        self.action_size = np.prod(self.env.action_space.shape)
+        self.obs = tf.placeholder(tf.float32, [None, self.observation_size])
+        batch_size = tf.shape(self.obs)[0]
+
+        mean, logstd = policy_network(self.obs, self.observation_size,
+                                      self.action_size, scope="policy-actor")
+        logstd = tf.tile(logstd, (tf.shape(self.obs)[0], 1))
+        self.action_mean = mean
+        self.action_logstd = logstd
+
         self.session.run(tf.global_variables_initializer())
         var_list = tf.trainable_variables()
 
@@ -92,27 +80,25 @@ class Actor(multiprocessing.Process):
         return
 
     def rollout(self):
-        obs, actions, rewards, action_dists_mu, action_dists_logstd = [], [], [], [], []
+        obs, actions, rewards, action_means, action_logstds = [], [], [], [], []
         ob = self.env.reset()
         for i in xrange(self.args.max_pathlength - 1):
             obs.append(ob)
-            action, action_dist_mu, action_dist_logstd = self.act(ob)
+            action, action_mean, action_logstd = self.act(ob)
             actions.append(action)
-            action_dists_mu.append(action_dist_mu)
-            action_dists_logstd.append(action_dist_logstd)
-            res = self.env.step(action)
-            ob = res[0]
-            rewards.append((res[1]))
-            if res[2] or i == self.args.max_pathlength - 2:
+            action_means.append(action_mean)
+            action_logstds.append(action_logstd)
+            [ob, reward, done, info]  = self.env.step(action)
+            rewards.append((reward))
+            if done or i == self.args.max_pathlength - 2:
                 path = {
                     "obs": np.concatenate(np.expand_dims(obs, 0)),
-                    "action_dists_mu": np.concatenate(action_dists_mu),
-                    "action_dists_logstd": np.concatenate(action_dists_logstd),
+                    "actions":  np.array(actions),
+                    "action_mean": np.concatenate(action_means),
+                    "action_logstd": np.concatenate(action_logstds),
                     "rewards": np.array(rewards),
-                    "actions":  np.array(actions)
                 }
                 return path
-                break
 
 class ParallelRollout():
     def __init__(self, args):
@@ -130,8 +116,7 @@ class ParallelRollout():
         for a in self.actors:
             a.start()
 
-        # we will start by running 20,000 / 1000 = 20 episodes for the first ieration
-
+        # initial estimate
         self.average_timesteps_in_episode = 1000
 
     def rollout(self):

@@ -50,12 +50,6 @@ learner_tasks.join()
 starting_weights = learner_results.get()
 rollouts.set_policy_weights(starting_weights)
 
-history = {}
-history["rollout_time"] = []
-history["learn_time"] = []
-history["mean_reward"] = []
-history["timesteps"] = []
-
 start_time = time.time()
 totalsteps = 0
 iteration = 0
@@ -80,16 +74,7 @@ while True:
     learn_time = (time.time() - learn_start) / 60.0
     print "Total time: %.2f mins" % ((time.time() - start_time) / 60.0)
 
-    history["rollout_time"].append(rollout_time)
-    history["learn_time"].append(learn_time)
-    history["mean_reward"].append(mean_reward)
-    history["timesteps"].append(args.timesteps_per_batch)
-
-    print "Current steps is " + str(args.timesteps_per_batch)
-
     if iteration % args.save_steps == 0:
-        with open("%s" % args.task, "w") as outfile:
-            json.dump(history, outfile)
         learner_tasks.put(2)
 
     totalsteps += args.timesteps_per_batch

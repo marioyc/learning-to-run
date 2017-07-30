@@ -2,31 +2,24 @@ import tensorflow as tf
 import numpy as np
 import scipy.signal
 
-# KL divergence with itself, holding first argument fixed
-def gauss_selfKL_firstfixed(mu, logstd):
-    mu1, logstd1 = map(tf.stop_gradient, [mu, logstd])
-    mu2, logstd2 = mu, logstd
-
-    return gauss_KL(mu1, logstd1, mu2, logstd2)
-
 # probability to take action x, given paramaterized guassian distribution
 def gauss_log_prob(mu, logstd, x):
-    var = tf.exp(2*logstd)
-    gp = -tf.square(x - mu)/(2*var) - .5*tf.log(tf.constant(2*np.pi)) - logstd
-    return  tf.reduce_sum(gp, [1])
+    var = tf.exp(2 * logstd)
+    gp = -tf.square(x - mu) / (2 * var) - 0.5 * np.log(2 * np.pi) - logstd
+    return  tf.reduce_sum(gp, 1)
 
 # KL divergence between two paramaterized guassian distributions
 def gauss_KL(mu1, logstd1, mu2, logstd2):
-    var1 = tf.exp(2*logstd1)
-    var2 = tf.exp(2*logstd2)
-
-    kl = tf.reduce_sum(logstd2 - logstd1 + (var1 + tf.square(mu1 - mu2))/(2*var2) - 0.5)
-    return kl
+    var1 = tf.exp(2 * logstd1)
+    var2 = tf.exp(2 * logstd2)
+    kl = tf.reduce_sum(logstd2 - logstd1 +
+                       (var1 + tf.square(mu1 - mu2)) / (2 * var2) - 0.5, 1)
+    return tf.reduce_mean(kl)
 
 # Shannon entropy for a paramaterized guassian distributions
 def gauss_ent(mu, logstd):
-    h = tf.reduce_sum(logstd + tf.constant(0.5*np.log(2*np.pi*np.e), tf.float32))
-    return h
+    h = tf.reduce_sum(logstd + 0.5 * np.log(2 * np.pi * np.e), 1)
+    return tf.reduce_mean(h)
 
 def discount(x, gamma):
     assert x.ndim >= 1
@@ -80,3 +73,28 @@ def fully_connected(input_layer, input_size, output_size,
                             regularizer=weight_regularizer)
         b = tf.get_variable("b", [output_size], initializer=bias_init)
     return tf.matmul(input_layer,w) + b
+
+def policy_network(input_layer, input_size, action_size, mean_hidden_size=64,
+                   l2_reg=0.0, scope="policy"):
+    with tf.variable_scope(scope):
+        weight_init = tf.random_uniform_initializer(-0.05, 0.05)
+        weight_regularizer = tf.contrib.layers.l2_regularizer(l2_reg)
+        bias_init = tf.constant_initializer(0)
+
+        # Mean
+        mean_h = fully_connected(input_layer, input_size, mean_hidden_size,
+                                 weight_init, weight_regularizer, bias_init,
+                                 "policy_mean_h1")
+        mean_h = tf.nn.relu(mean_h)
+        mean_h = fully_connected(mean_h, mean_hidden_size, mean_hidden_size,
+                                 weight_init, weight_regularizer, bias_init,
+                                 "policy_mean_h2")
+        mean_h = tf.nn.relu(mean_h)
+        mean_h = fully_connected(mean_h, mean_hidden_size, action_size,
+                                 weight_init, weight_regularizer, bias_init,
+                                 "policy_mean_h3")
+
+        # Std
+        logstd = tf.Variable(tf.zeros([1, action_size]), name="policy_logstd")
+
+    return mean_h, logstd
