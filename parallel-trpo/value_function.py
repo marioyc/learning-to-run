@@ -11,17 +11,17 @@ class ValueFunction(object):
         self.x = tf.placeholder(tf.float32, shape=[None, observation_size], name="x")
         self.y = tf.placeholder(tf.float32, shape=[None], name="y")
 
-        weight_init = tf.random_uniform_initializer(-0.05, 0.05)
+        weight_init = normc_initializer(1.0)
         weight_regularizer = tf.contrib.layers.l2_regularizer(self.args.l2_reg)
         bias_init = tf.constant_initializer(0)
 
         with tf.variable_scope("VF"):
             h1 = fully_connected(self.x, observation_size, hidden_size,
                                  weight_init, weight_regularizer, bias_init, "h1")
-            h1 = tf.nn.relu(h1)
+            h1 = tf.nn.tanh(h1)
             h2 = fully_connected(h1, hidden_size, hidden_size, weight_init,
                                  weight_regularizer, bias_init, "h2")
-            h2 = tf.nn.relu(h2)
+            h2 = tf.nn.tanh(h2)
             h3 = fully_connected(h2, hidden_size, 1, weight_init,
                                  weight_regularizer, bias_init, "h3")
         self.vf = tf.reshape(h3, (-1,))

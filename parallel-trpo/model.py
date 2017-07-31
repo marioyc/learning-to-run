@@ -65,7 +65,8 @@ class PPO(multiprocessing.Process):
 
         self.global_step = tf.Variable(initial_value=0, trainable=False)
         learning_rate = tf.train.exponential_decay(self.args.lr,
-                                                   self.global_step, 1, 0.9999)
+                                                   self.global_step, 1,
+                                                   self.args.lr_decay)
         self.optimizer = tf.train.AdamOptimizer(learning_rate)
         self.train_op = self.optimizer.minimize(pol_surr + reg_losses)
 
