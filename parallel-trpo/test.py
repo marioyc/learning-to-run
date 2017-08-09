@@ -9,6 +9,7 @@ from utils import policy_network
 
 # Command line parameters
 parser = argparse.ArgumentParser(description='Submit the result to crowdAI')
+parser.add_argument("--hidden_size", nargs="+", type=int, default=[64, 64])
 parser.add_argument("--runs", type=int, default=3)
 parser.add_argument("--visualize", action='store_true', default=False)
 parser.add_argument("--model_path", type=str, required=True)
@@ -23,7 +24,8 @@ batch_size = tf.shape(obs_ph)[0]
 
 scope = "policy"
 action_mean, action_logstd = policy_network(obs_ph, observation_size,
-                                            action_size, scope=scope)
+                                            args.hidden_size, action_size,
+                                            scope=scope)
 action_logstd = tf.tile(action_logstd, (batch_size, 1))
 
 saver = tf.train.Saver()

@@ -74,7 +74,7 @@ def normc_initializer(std=1.0):
         return tf.constant(out)
     return _initializer
 
-def policy_network(input_layer, input_size, action_size, mean_hidden_size=64,
+def policy_network(input_layer, input_size, action_size, mean_hidden_size,
                    l2_reg=0.0, scope="policy"):
     with tf.variable_scope(scope):
         weight_init = normc_initializer(1.0)
@@ -82,17 +82,19 @@ def policy_network(input_layer, input_size, action_size, mean_hidden_size=64,
         bias_init = tf.constant_initializer(0)
 
         # Mean
-        mean_h = fully_connected(input_layer, input_size, mean_hidden_size,
-                                 weight_init, weight_regularizer, bias_init,
-                                 "policy_mean_h1")
-        mean_h = tf.nn.tanh(mean_h)
-        mean_h = fully_connected(mean_h, mean_hidden_size, mean_hidden_size,
-                                 weight_init, weight_regularizer, bias_init,
-                                 "policy_mean_h2")
-        mean_h = tf.nn.tanh(mean_h)
-        mean_h = fully_connected(mean_h, mean_hidden_size, action_size,
+        mean_h = input_layer
+        last_size = input_size
+        layer_id = 1
+        for hidden_size in mean_hidden_size:
+            mean_h = fully_connected(mean_h, last_size, hidden_size,
+                                     weight_init, weight_regularizer, bias_init,
+                                     "policy_mean_h%d" % layer_id)
+            mean_h = tf.nn.tanh(mean_h)
+            last_size = hidden_size
+            layer_id += 1
+        mean_h = fully_connected(mean_h, last_size, action_size,
                                  normc_initializer(0.01), weight_regularizer,
-                                 bias_init, "policy_mean_h3")
+                                 bias_init, "policy_mean_h%d" % layer_id)
 
         # Std
         logstd = tf.Variable(tf.zeros([1, action_size]), name="policy_logstd")

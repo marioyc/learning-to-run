@@ -36,8 +36,8 @@ class PPO(multiprocessing.Process):
 
         scope = "policy"
         mean, logstd = policy_network(self.obs, self.observation_size,
-                                      self.action_size, l2_reg=self.args.l2_reg,
-                                      scope=scope)
+                                      self.action_size, self.args.hidden_size,
+                                      l2_reg=self.args.l2_reg, scope=scope)
         self.action_mean = mean
         self.action_logstd = logstd
         logstd = tf.tile(logstd, (batch_size, 1))
@@ -83,12 +83,11 @@ class PPO(multiprocessing.Process):
 
         self.writer = tf.summary.FileWriter('logs/' + self.args.log_name,
                                             self.session.graph)
-        self.mean_loss = tf.placeholder(tf.float32, shape=())
-        self.summary_loss = tf.summary.scalar('mean_loss', self.mean_loss)
-        self.log_step_loss = 0
         self.mean_reward = tf.placeholder(tf.float32, shape=())
         self.summary_reward = tf.summary.scalar('mean_reward', self.mean_reward)
-        self.log_step_reward = 0
+        self.mean_steps = tf.placeholder(tf.float32, shape=())
+        self.summary_steps = tf.summary.scalar('mean_steps', self.mean_steps)
+        self.log_step = 0
 
     def run(self):
         self.makeModel()
@@ -164,10 +163,6 @@ class PPO(multiprocessing.Process):
                 start = end
 
             mean_loss /= n_minibatches
-            #summary_loss = self.session.run(self.summary_loss,
-            #                                feed_dict={self.mean_loss: mean_loss})
-            #self.writer.add_summary(summary_loss, self.log_step_loss)
-            #self.log_step_loss += 1
 
         feed_dict = {
             self.obs: obs_n,
@@ -176,27 +171,27 @@ class PPO(multiprocessing.Process):
             self.oldaction_logstd: action_logstd,
             self.advantage: advant_n,
         }
-        surrogate_after, kl_after, entropy_after = self.session.run(self.losses,
-                                                                    feed_dict)
-        logstd = self.session.run(self.action_logstd)
+        kl_after, entropy_after = self.session.run(self.losses[1:], feed_dict)
 
-        episoderewards = np.array([path["rewards"].sum() for path in paths])
-        mean_reward = episoderewards.mean()
-        summary_reward = self.session.run(self.summary_reward,
-                                          feed_dict={self.mean_reward: mean_reward})
-        self.writer.add_summary(summary_reward, self.log_step_reward)
-        self.log_step_reward += 1
+        episode_rewards = np.array([path["rewards"].sum() for path in paths])
+        episode_steps = np.array([len(path["rewards"]) for path in paths])
+        mean_reward = episode_rewards.mean()
+        mean_steps = episode_steps.mean()
+        summary_reward, summary_steps = self.session.run(
+            [self.summary_reward, self.summary_steps],
+            feed_dict={self.mean_reward: mean_reward,
+                       self.mean_steps: mean_steps})
+        self.writer.add_summary(summary_reward, self.log_step)
+        self.log_step += 1
 
         timesteps = [len(path["rewards"]) for path in paths]
 
         stats = {}
-        stats["Rewards (mean, std)"] = (mean_reward, np.std(episoderewards))
-        stats["Timesteps (total, average)"] = (sum(timesteps),
-                                               float(sum(timesteps)) / len(paths))
+        stats["Rewards (mean, std)"] = (mean_reward, np.std(episode_rewards))
+        stats["Timesteps (total, average)"] = (sum(timesteps), mean_steps)
         stats["Updates"] = updates
         stats["KL between old and new distribution"] = kl_after
-        stats["Action distribution (entropy, std)"] = (entropy_after,
-                                                       np.exp(logstd[0]).tolist())
+        stats["Action distribution (entropy)"] = entropy_after
         for k, v in stats.iteritems():
             print(k + ": " + " " * (40 - len(k)) + str(v))
 

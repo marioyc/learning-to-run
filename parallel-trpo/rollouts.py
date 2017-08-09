@@ -46,7 +46,8 @@ class Actor(multiprocessing.Process):
         batch_size = tf.shape(self.obs)[0]
 
         mean, logstd = policy_network(self.obs, self.observation_size,
-                                      self.action_size, scope="policy-actor")
+                                      self.action_size, self.args.hidden_size,
+                                      scope="policy-actor")
         logstd = tf.tile(logstd, (tf.shape(self.obs)[0], 1))
         self.action_mean = mean
         self.action_logstd = logstd

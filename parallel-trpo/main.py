@@ -24,6 +24,7 @@ parser.add_argument("--epochs", type=int, default=10)
 parser.add_argument("--batch_size", type=int, default=64)
 parser.add_argument("--epsilon", type=float, default=0.2)
 parser.add_argument("--log_name", type=str, default='ppo')
+parser.add_argument("--hidden_size", nargs="+", type=int, default=[64, 64])
 parser.add_argument("--l2_reg", type=float, default=0.0)
 parser.add_argument("--save_steps", type=int, default=50)
 
