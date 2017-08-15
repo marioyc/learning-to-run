@@ -10,12 +10,15 @@ from random import randint
 from osim.env import RunEnv
 
 class Actor(multiprocessing.Process):
-    def __init__(self, args, task_q, result_q, actor_id, monitor):
+    def __init__(self, args, task_q, result_q, actor_id, monitor,
+                 weights_ready_event):
         multiprocessing.Process.__init__(self)
         self.task_q = task_q
         self.result_q = result_q
         self.args = args
+        self.actor_id = actor_id
         self.monitor = monitor
+        self.weights_ready_event = weights_ready_event
 
     def act(self, obs):
         obs = np.expand_dims(obs, 0)
@@ -47,14 +50,21 @@ class Actor(multiprocessing.Process):
 
         mean, logstd = policy_network(self.obs, self.observation_size,
                                       self.action_size, self.args.hidden_size,
-                                      scope="policy-actor")
-        logstd = tf.tile(logstd, (tf.shape(self.obs)[0], 1))
+                                      layer_norm=self.args.layer_norm,
+                                      scope="actor%d" % self.actor_id)
         self.action_mean = mean
+        logstd = tf.tile(logstd, (batch_size, 1))
         self.action_logstd = logstd
 
         self.session.run(tf.global_variables_initializer())
-        var_list = tf.trainable_variables()
+        var_list = [var for var in tf.trainable_variables()
+                    if 'policy' in var.name]
 
+        self.current_weights = None
+        self.noise_vars = [tf.random_normal(shape=tf.shape(var),
+                                            stddev=self.args.noise,
+                                            seed=1234 + i)
+                           for i, var in enumerate(var_list)]
         self.set_policy = SetPolicyWeights(self.session, var_list)
 
         while True:
@@ -62,6 +72,7 @@ class Actor(multiprocessing.Process):
             next_task = self.task_q.get(block=True)
             if next_task == 1:
                 # the task is an actor request to collect experience
+                assert self.current_weights is not None
                 path = self.rollout()
                 self.task_q.task_done()
                 self.result_q.put(path)
@@ -72,13 +83,13 @@ class Actor(multiprocessing.Process):
                 self.task_q.task_done()
                 break
             else:
-                # the task is to set parameters of the actor policy
-                self.set_policy(next_task)
-                # super hacky method to make sure when we fill the queue with set parameter tasks,
-                # an actor doesn't finish updating before the other actors can accept their own tasks.
-                time.sleep(0.1)
+                # the task is to cache parameters of the actor policy
+                self.current_weights = next_task
+                noise = self.session.run(self.noise_vars)
+                self.set_policy([v1 + v2 for v1, v2 in zip(self.current_weights,
+                                                          noise)])
                 self.task_q.task_done()
-        return
+                self.weights_ready_event.wait()
 
     def rollout(self):
         obs, actions, rewards, action_means, action_logstds = [], [], [], [], []
@@ -107,28 +118,28 @@ class ParallelRollout():
 
         self.tasks = multiprocessing.JoinableQueue()
         self.results = multiprocessing.Queue()
+        self.weights_ready_event = multiprocessing.Event()
 
         self.actors = []
-        self.actors.append(Actor(self.args, self.tasks, self.results, 9999, args.monitor))
+        self.actors.append(Actor(self.args, self.tasks, self.results, 0,
+                                 args.monitor, self.weights_ready_event))
 
-        for i in xrange(self.args.num_threads-1):
-            self.actors.append(Actor(self.args, self.tasks, self.results, 37*(i+3), False))
+        for i in xrange(self.args.num_threads - 1):
+            self.actors.append(Actor(self.args, self.tasks, self.results, i + 1,
+                                     False, self.weights_ready_event))
 
         for a in self.actors:
             a.start()
 
         # initial estimate
-        self.average_timesteps_in_episode = 1000
+        self.average_timesteps = 1000
 
     def rollout(self):
-
-        # keep 20,000 timesteps per update
-        num_rollouts = self.args.timesteps_per_batch / self.average_timesteps_in_episode
+        num_rollouts = self.args.timesteps_per_batch / self.average_timesteps
         print("Number of rollouts: %d" % num_rollouts)
 
         for i in xrange(num_rollouts):
             self.tasks.put(1)
-
         self.tasks.join()
 
         paths = []
@@ -136,13 +147,23 @@ class ParallelRollout():
             num_rollouts -= 1
             paths.append(self.results.get())
 
-        self.average_timesteps_in_episode = sum([len(path["rewards"]) for path in paths]) / len(paths)
+        episode_rewards = np.array([path["rewards"].sum() for path in paths])
+        print("%-40s: %f, %f" % ("Rewards (mean, std)", episode_rewards.mean(),
+                                 episode_rewards.std()))
+
+        episode_steps = np.array([len(path["rewards"]) for path in paths])
+        print("%-40s: %d, %f" % ("Timesteps (total, average)",
+                                 episode_steps.sum(), episode_steps.mean()))
+        self.average_timesteps = int(episode_steps.mean())
+
         return paths
 
     def set_policy_weights(self, parameters):
+        self.weights_ready_event.clear()
         for i in xrange(self.args.num_threads):
             self.tasks.put(parameters)
         self.tasks.join()
+        self.weights_ready_event.set()
 
     def end(self):
         for i in xrange(self.args.num_threads):

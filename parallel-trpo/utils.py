@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorflow.contrib.layers as layers
 import numpy as np
 import scipy.signal
 
@@ -58,14 +59,14 @@ class SetPolicyWeights(object):
             count += 1
         self.session.run(self.assigns, feed_dict)
 
-def fully_connected(input_layer, input_size, output_size,
-                    weight_init, weight_regularizer, bias_init, scope):
+def fully_connected(input_layer, input_size, output_size, weight_init,
+                    weight_regularizer, bias_init, scope=None):
     with tf.variable_scope(scope):
         w = tf.get_variable("w", [input_size, output_size],
                             initializer=weight_init,
                             regularizer=weight_regularizer)
         b = tf.get_variable("b", [output_size], initializer=bias_init)
-    return tf.matmul(input_layer,w) + b
+    return tf.matmul(input_layer, w) + b
 
 def normc_initializer(std=1.0):
     def _initializer(shape, dtype=None, partition_info=None):
@@ -75,7 +76,7 @@ def normc_initializer(std=1.0):
     return _initializer
 
 def policy_network(input_layer, input_size, action_size, mean_hidden_size,
-                   l2_reg=0.0, scope="policy"):
+                   l2_reg=0.0, layer_norm=False, scope="policy"):
     with tf.variable_scope(scope):
         weight_init = normc_initializer(1.0)
         weight_regularizer = tf.contrib.layers.l2_regularizer(l2_reg)
@@ -88,15 +89,92 @@ def policy_network(input_layer, input_size, action_size, mean_hidden_size,
         for hidden_size in mean_hidden_size:
             mean_h = fully_connected(mean_h, last_size, hidden_size,
                                      weight_init, weight_regularizer, bias_init,
-                                     "policy_mean_h%d" % layer_id)
+                                     scope="policy_mean_h%d" % layer_id)
+            if layer_norm:
+                mean_h = layers.layer_norm(mean_h, center=True, scale=True)
             mean_h = tf.nn.tanh(mean_h)
             last_size = hidden_size
             layer_id += 1
         mean_h = fully_connected(mean_h, last_size, action_size,
                                  normc_initializer(0.01), weight_regularizer,
-                                 bias_init, "policy_mean_h%d" % layer_id)
+                                 bias_init, scope="policy_mean_h%d" % layer_id)
 
         # Std
         logstd = tf.Variable(tf.zeros([1, action_size]), name="policy_logstd")
 
     return mean_h, logstd
+
+# TRPO auxiliary functions
+
+def var_shape(x):
+    out = [k.value for k in x.get_shape()]
+    assert all(isinstance(a, int) for a in out), \
+        "shape function assumes that shape is fully known"
+    return out
+
+def numel(x):
+    return np.prod(var_shape(x))
+
+def flatgrad(loss, var_list):
+    grads = tf.gradients(loss, var_list)
+    return tf.concat([tf.reshape(grad, [numel(v)])
+                      for (v, grad) in zip(var_list, grads)], 0)
+
+def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
+    # in numpy
+    p = b.copy()
+    r = b.copy()
+    x = np.zeros_like(b)
+    rdotr = r.dot(r)
+    for i in xrange(cg_iters):
+        z = f_Ax(p)
+        v = rdotr / p.dot(z)
+        x += v * p
+        r -= v * z
+        newrdotr = r.dot(r)
+        mu = newrdotr / rdotr
+        p = r + mu * p
+        rdotr = newrdotr
+        if rdotr < residual_tol:
+            break
+    return x
+
+def linesearch(f, x, fullstep, expected_improve_rate):
+    accept_ratio = .1
+    max_backtracks = 10
+    fval = f(x)
+    for (_n_backtracks, stepfrac) in enumerate(.5**np.arange(max_backtracks)):
+        xnew = x + stepfrac * fullstep
+        newfval = f(xnew)
+        actual_improve = fval - newfval
+        expected_improve = expected_improve_rate * stepfrac
+        ratio = actual_improve / expected_improve
+        if ratio > accept_ratio and actual_improve > 0:
+            return xnew
+    return x
+
+class SetFromFlat(object):
+    def __init__(self, session, var_list):
+        self.session = session
+        assigns = []
+        shapes = map(var_shape, var_list)
+        total_size = sum(np.prod(shape) for shape in shapes)
+        self.theta = theta = tf.placeholder(tf.float32, [total_size])
+        start = 0
+        assigns = []
+        for (shape, v) in zip(shapes, var_list):
+            size = np.prod(shape)
+            assigns.append(tf.assign(v,tf.reshape(theta[start:start + size],shape)))
+            start += size
+        self.op = tf.group(*assigns)
+
+    def __call__(self, theta):
+        self.session.run(self.op, feed_dict={self.theta: theta})
+
+class GetFlat(object):
+    def __init__(self, session, var_list):
+        self.session = session
+        self.op = tf.concat([tf.reshape(v, [numel(v)]) for v in var_list], 0)
+
+    def __call__(self):
+        return self.op.eval(session=self.session)

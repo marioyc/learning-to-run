@@ -27,9 +27,9 @@ action_size = np.prod(env.action_space.shape)
 obs_ph = tf.placeholder(tf.float32, [None, observation_size])
 batch_size = tf.shape(obs_ph)[0]
 
-scope = "policy"
+scope = "actor"
 action_mean, action_logstd = policy_network(obs_ph, observation_size,
-                                            args.hidden_size, action_size,
+                                            action_size, args.hidden_size,
                                             scope=scope)
 action_logstd = tf.tile(action_logstd, (batch_size, 1))
 

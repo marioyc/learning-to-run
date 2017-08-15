@@ -2,30 +2,45 @@ import numpy as np
 import tensorflow as tf
 import gym
 from utils import *
-from model import *
 import argparse
 from rollouts import *
 import json
 
+from ppo import PPO
+from trpo import TRPO
+
 from osim.env import RunEnv
 
 parser = argparse.ArgumentParser(description='PPO.')
-# these parameters should stay the same
+
+# Data collection parameters
 parser.add_argument("--task", type=str, default='osim-rl')
 parser.add_argument("--timesteps_per_batch", type=int, default=5000)
 parser.add_argument("--n_steps", type=int, default=1000000)
-parser.add_argument("--gamma", type=float, default=.99)
-parser.add_argument("--lamb", type=float, default=.96)
 parser.add_argument("--num_threads", type=int, default=8)
 parser.add_argument("--monitor", type=bool, default=False)
+
+# Policy parameters
+parser.add_argument("--hidden_size", nargs="+", type=int, default=[64, 64])
+parser.add_argument("--layer_norm", action='store_true', default=False)
+
+# Algorithm parameters
+parser.add_argument("--algorithm", type=str, default="ppo")
+parser.add_argument("--gamma", type=float, default=.99)
+parser.add_argument("--lamb", type=float, default=.96)
+parser.add_argument("--epsilon", type=float, default=0.2)
+parser.add_argument("--noise", type=float, default=0.0)
+parser.add_argument("--max_kl", type=float, default=0.01)
+
+# Optimization parameters
 parser.add_argument("--lr", type=float, default=3e-4)
 parser.add_argument("--lr_decay", type=float, default=0.9999)
 parser.add_argument("--epochs", type=int, default=10)
-parser.add_argument("--batch_size", type=int, default=64)
-parser.add_argument("--epsilon", type=float, default=0.2)
-parser.add_argument("--log_name", type=str, default='ppo')
-parser.add_argument("--hidden_size", nargs="+", type=int, default=[64, 64])
+parser.add_argument("--batch_size", type=int, default=128)
 parser.add_argument("--l2_reg", type=float, default=0.0)
+
+# Log paramters
+parser.add_argument("--log_name", type=str, default='ppo')
 parser.add_argument("--save_steps", type=int, default=50)
 
 args = parser.parse_args()
@@ -43,10 +58,15 @@ if args.task == 'osim-rl':
 else:
     learner_env = gym.make(args.task)
 
-learner = PPO(args, learner_env.observation_space, learner_env.action_space, learner_tasks, learner_results)
+if args.algorithm == 'ppo':
+    learner = PPO(args, learner_env.observation_space, learner_env.action_space,
+                  learner_tasks, learner_results)
+elif args.algorithm == 'trpo':
+    learner = TRPO(args, learner_env.observation_space, learner_env.action_space,
+                   learner_tasks, learner_results)
 learner.start()
-rollouts = ParallelRollout(args)
 
+rollouts = ParallelRollout(args)
 learner_tasks.put(1)
 learner_tasks.join()
 starting_weights = learner_results.get()
