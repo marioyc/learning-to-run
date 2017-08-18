@@ -23,6 +23,8 @@ parser.add_argument("--monitor", type=bool, default=False)
 # Policy parameters
 parser.add_argument("--hidden_size", nargs="+", type=int, default=[64, 64])
 parser.add_argument("--layer_norm", action='store_true', default=False)
+parser.add_argument("--std_scale", type=float, default=0.0)
+parser.add_argument("--fixed_std", action='store_true', default=False)
 
 # Algorithm parameters
 parser.add_argument("--algorithm", type=str, default="ppo")

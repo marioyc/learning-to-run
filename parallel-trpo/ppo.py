@@ -36,6 +36,8 @@ class PPO(multiprocessing.Process):
                                       self.action_size, self.args.hidden_size,
                                       l2_reg=self.args.l2_reg,
                                       layer_norm=self.args.layer_norm,
+                                      std_scale=self.args.std_scale,
+                                      fixed_std=self.args.fixed_std,
                                       scope=scope)
         logstd = tf.tile(logstd, (batch_size, 1))
 
@@ -49,7 +51,7 @@ class PPO(multiprocessing.Process):
         surr2 = tf.clip_by_value(ratio, 1.0 - self.args.epsilon,
                                  1.0 + self.args.epsilon) * self.advantage
         pol_surr = -tf.reduce_mean(tf.minimum(surr1, surr2))
-        var_list = tf.trainable_variables()
+        var_list = tf.get_collection(tf.GraphKeys.VARIABLES, scope='actor')
 
         # losses
         kl = gauss_KL(self.oldaction_mean, self.oldaction_logstd, mean, logstd)

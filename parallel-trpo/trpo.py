@@ -36,6 +36,8 @@ class TRPO(multiprocessing.Process):
                                       self.action_size, self.args.hidden_size,
                                       l2_reg=self.args.l2_reg,
                                       layer_norm=self.args.layer_norm,
+                                      std_scale=self.args.std_scale,
+                                      fixed_std=self.args.fixed_std,
                                       scope=scope)
         logstd = tf.tile(logstd, (batch_size, 1))
 
@@ -46,7 +48,9 @@ class TRPO(multiprocessing.Process):
         ratio = tf.exp(log_p - log_oldp)
 
         pol_surr = -tf.reduce_mean(ratio * self.advantage)
-        var_list = tf.trainable_variables()
+        var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                     scope='actor')
+        train_var_list = tf.trainable_variables()
 
         # losses
         kl = gauss_KL(self.oldaction_mean, self.oldaction_logstd, mean, logstd)
@@ -58,11 +62,11 @@ class TRPO(multiprocessing.Process):
         self.losses = [pol_surr, kl, ent]
 
         # optimization parameters
-        self.pg = flatgrad(pol_surr, var_list)
-        grads = tf.gradients(kl, var_list)
+        self.pg = flatgrad(pol_surr, train_var_list)
+        grads = tf.gradients(kl, train_var_list)
         # what vector we're multiplying by
         self.flat_tangent = tf.placeholder(tf.float32, [None])
-        shapes = map(var_shape, var_list)
+        shapes = map(var_shape, train_var_list)
         start = 0
         tangents = []
         for shape in shapes:
@@ -73,11 +77,11 @@ class TRPO(multiprocessing.Process):
         # gradient of KL w/ itself * tangent
         gvp = [tf.reduce_sum(g * t) for (g, t) in zip(grads, tangents)]
         # 2nd gradient of KL w/ itself * tangent
-        self.fvp = flatgrad(gvp, var_list)
+        self.fvp = flatgrad(gvp, train_var_list)
         # the actual parameter values
-        self.gf = GetFlat(self.session, var_list)
+        self.gf = GetFlat(self.session, train_var_list)
         # call this to set parameter values
-        self.sff = SetFromFlat(self.session, var_list)
+        self.sff = SetFromFlat(self.session, train_var_list)
 
         # value function
         self.vf = ValueFunction(self.args, self.observation_size, self.session)

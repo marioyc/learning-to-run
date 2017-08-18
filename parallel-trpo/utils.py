@@ -76,7 +76,8 @@ def normc_initializer(std=1.0):
     return _initializer
 
 def policy_network(input_layer, input_size, action_size, mean_hidden_size,
-                   l2_reg=0.0, layer_norm=False, scope="policy"):
+                   l2_reg=0.0, layer_norm=False, std_scale=0.0, fixed_std=False,
+                   scope="policy"):
     with tf.variable_scope(scope):
         weight_init = normc_initializer(1.0)
         weight_regularizer = tf.contrib.layers.l2_regularizer(l2_reg)
@@ -100,8 +101,8 @@ def policy_network(input_layer, input_size, action_size, mean_hidden_size,
                                  bias_init, scope="policy_mean_h%d" % layer_id)
 
         # Std
-        logstd = tf.Variable(tf.zeros([1, action_size]), name="policy_logstd")
-
+        logstd = tf.Variable(tf.ones([1, action_size]) * std_scale,
+                             trainable=not fixed_std, name="policy_logstd")
     return mean_h, logstd
 
 # TRPO auxiliary functions

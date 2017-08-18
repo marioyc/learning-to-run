@@ -57,14 +57,16 @@ class Actor(multiprocessing.Process):
         self.action_logstd = logstd
 
         self.session.run(tf.global_variables_initializer())
-        var_list = [var for var in tf.trainable_variables()
-                    if 'policy' in var.name]
+        var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                     scope='actor%d' % self.actor_id)
+        train_var_list = tf.trainable_variables()
 
+        # TODO: fix noise udpate
         self.current_weights = None
         self.noise_vars = [tf.random_normal(shape=tf.shape(var),
                                             stddev=self.args.noise,
                                             seed=1234 + i)
-                           for i, var in enumerate(var_list)]
+                           for i, var in enumerate(train_var_list)]
         self.set_policy = SetPolicyWeights(self.session, var_list)
 
         while True:
